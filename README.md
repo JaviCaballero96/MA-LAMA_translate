@@ -1,5 +1,7 @@
 # MA-LAMA
-Multi-Agent Temporal Task Solving and Plan Optimization: https://openreview.net/forum?id=sPSw73rhQB
+
+- Caballero Testón, J., & R-Moreno, M. D. (2024). Multi-Agent Temporal Task Solving and Plan Optimization. Proceedings of the International Conference on Automated Planning and Scheduling, 34(1), 50-58. https://doi.org/10.1609/icaps.v34i1.31460
+- J. Caballero Testón and Maria D. R-Moreno. 2025. MA-LAMA: Exploiting the Multi-Agent Nature of Temporal PlanningProblems.Journal of Artificial Intelligence Research83, Article 23 (August 2025), 41 pages.doi: https://doi.org/10.1613/jair.1.18906
 
 ## --- If you want to use MA-LAMA ---
 
