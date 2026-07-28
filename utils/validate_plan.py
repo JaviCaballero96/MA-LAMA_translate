@@ -25,9 +25,8 @@ Exit code: 0 if the plan is valid, 1 otherwise.
 
 Scope / known limitations (kept honest on purpose):
   - Supports :typing, :durative-actions, :numeric-fluents, :action-costs,
-    :timed-initial-literals (TILs are parsed but NOT simulated as events --
-    a warning is printed if the problem contains any, since this tool's
-    event loop is driven purely by the plan's own action start/end times).
+    :timed-initial-literals (each TIL is simulated as its own event at its
+    fixed time, independent of the plan's own actions).
   - No support for conditional effects, quantifiers (forall/exists), or
     disjunctive preconditions (or) -- none of these appear in the drone
     domains this tool was built for; a NotImplementedError points at the
@@ -237,16 +236,39 @@ def _type_matches(t, target, types):
     return False
 
 
+def _expr_var_names(expr):
+    """All "?"-prefixed variable tokens referenced anywhere in a raw
+    (un-grounded) expression tree, e.g. the ones a :duration formula is
+    built from."""
+    names = set()
+    if isinstance(expr, list):
+        for e in expr:
+            names |= _expr_var_names(e)
+    elif isinstance(expr, str) and expr.startswith("?"):
+        names.add(expr)
+    return names
+
+
 def _infer_actor_type(d):
-    """Heuristic: the type used as a parameter in the most action schemas is 'the actor'."""
+    """Heuristic: the type used as a parameter in the most action schemas
+    is 'the actor'. Ties (e.g. every action also has a place parameter)
+    are broken deterministically -- first by preferring a type whose
+    parameter is referenced in the most :duration formulas (the actor is
+    usually what a duration's speed/rate depends on), then by type name,
+    so the result never depends on this process's set-iteration order."""
     counts = defaultdict(int)
+    duration_counts = defaultdict(int)
     for schema in d.actions.values():
-        seen_types = {typ for _, typ in schema.params}
+        seen_types = sorted({typ for _, typ in schema.params})
+        duration_vars = _expr_var_names(schema.duration_expr)
+        types_in_duration = sorted({typ for varname, typ in schema.params if varname in duration_vars})
         for typ in seen_types:
             counts[typ] += 1
+        for typ in types_in_duration:
+            duration_counts[typ] += 1
     if not counts:
         return
-    d.actor_type = max(counts.items(), key=lambda kv: kv[1])[0]
+    d.actor_type = max(counts.items(), key=lambda kv: (kv[1], duration_counts[kv[0]], kv[0]))[0]
     for name, schema in d.actions.items():
         for varname, typ in schema.params:
             if _type_matches(typ, d.actor_type, d.types):
@@ -458,6 +480,14 @@ class Simulator:
         for i, pa in enumerate(self.plan):
             events.append((pa.end, 0, i, "end"))
             events.append((pa.start, 1, i, "start"))
+        # A timed-initial-literal is the environment committing to a fact
+        # at a fixed time, independent of any action. Give it priority -1
+        # so it's in effect for any action tied with it at the same
+        # instant, the same way a release is treated as available to an
+        # acquire at the same instant.
+        for i in range(len(self.problem.tils)):
+            til_time = self.problem.tils[i][0]
+            events.append((til_time, -1, i, "til"))
         # Nudge "end" events earlier by the rounding slack before sorting so
         # a release is never ordered after the acquire it's really
         # simultaneous with.
@@ -469,6 +499,16 @@ class Simulator:
         events.sort(key=sort_key)
 
         for time, _, i, phase in events:
+            if phase == "til":
+                _, sign, name, args = self.problem.tils[i]
+                key = (name, args)
+                if sign:
+                    self.state.add(key)
+                else:
+                    self.state.discard(key)
+                self.atom_history[key].append((time, sign, "TIL", "TIL"))
+                continue
+
             pa = self.plan[i]
             schema = self.domain.actions.get(pa.name)
             if schema is None:
@@ -682,8 +722,7 @@ def main():
         print(f"Problem: {args.problem}  ({len(problem.objects)} objects)")
         print(f"Plan:    {args.plan}  ({len(plan)} actions)")
         if problem.tils:
-            print(f"WARNING: problem has {len(problem.tils)} timed-initial-literal(s); "
-                  f"these are NOT simulated as events by this tool.")
+            print(f"Problem has {len(problem.tils)} timed-initial-literal(s); simulated as events.")
         print()
 
     sim = Simulator(domain, problem, plan).run()
