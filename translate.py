@@ -843,8 +843,12 @@ def translate_timed_goals(timed_goals_list, timed_negated_goals_list, dictionary
 
             for timed_atom in constraints:
                 atom_translated = translate_strips_conditions_aux([timed_atom], dictionary, ranges)
+                # A negative TIL is a deadline, not an achieved value: the
+                # search side recognizes it by the -1 sentinel (see
+                # successor_generator.cc's check_temporal_goals_validity),
+                # not by the variable's actual complementary SAS value.
                 for var2, val2 in atom_translated[0].items():
-                    translated_timed_goals_list[(var, val)].append([var2, val2, timed_atom.at])
+                    translated_timed_goals_list[(var, val)].append([var2, -1, timed_atom.at])
 
     return translated_timed_goals_list
 
@@ -997,7 +1001,7 @@ def pddl_to_sas(task, time_value):
 
                                 if not relaxed_reachable_single[0]:
                                     if single_goal_task.goal.parts[0] in timed_negated_goals_list.keys():
-                                        timed_negated_goals_list[single_goal_task.goal.parts[0]].append = [neg_atom]
+                                        timed_negated_goals_list[single_goal_task.goal.parts[0]].append(neg_atom)
                                     else:
                                         timed_negated_goals_list[single_goal_task.goal.parts[0]] = [neg_atom]
                                     # print("The atom " + str(neg_atom) + "denies the goal " +
